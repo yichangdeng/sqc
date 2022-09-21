@@ -1,0 +1,60 @@
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.qc.dao.WarningDao">
+    <select id="selectPage" resultType="com.example.qc.bean.WarningEntity">
+        SELECT jse.sample_name,
+               count(jse.sample_name) as test_numb,
+               ROUND(AVG(jse.step_41), 2) as half_year_avg,
+               IFNULL(std.size_limit, '') as 'size_limit',IFNULL(std.size_limit_control,'') as 'size_limit_control'
+        FROM jumbo_step_entity jse
+                 INNER JOIN jumbo_std std on jse.sample_name = std.sample_name
+        GROUP BY jse.sample_name
+    </select>
+
+    <select id="selectWarningPage" resultType="com.example.qc.bean.WarningEntity">
+        SELECT t5.*,
+               (t5.half_year_avg - t5.size_center_value) as 'agv_size_center_value'
+        FROM (
+                SELECT
+                     t4.sample_name,
+                     COUNT(t4.sample_name) as test_numb,
+                     ROUND(AVG(t4.step_41), 1) as half_year_avg,
+                     IFNULL(jsd.size_limit, '') as 'size_limit',IFNULL(jsd.size_limit_control,'') as 'size_limit_control',
+                     ROUND((jsd.size_limit_up_std+jsd.size_limit_down_std)/2) as 'size_center_value'
+                FROM
+                     (
+                        SELECT
+                             jse.* FROM
+                             jumbo_step_entity jse
+                        WHERE
+                                sample_name IN (
+                                SELECT DISTINCT
+                                    t1.sample_name
+                                FROM
+                                    jumbo_step_entity t1
+                                        INNER JOIN jumbo_std t2 ON t1.sample_name = t2.sample_name
+                                        AND t1.step_41 NOT BETWEEN t2.size_limit_control_up_std
+                                        AND t2.size_limit_control_down_std
+                             )) t4,jumbo_std jsd WHERE jsd.sample_name = t4.sample_name
+                 GROUP BY sample_name) t5
+    </select>
+
+    <select id="selectListBySampleName" resultType="com.example.qc.bean.WarningVo">
+        SELECT t3.* FROM (
+        SELECT
+        t1.sample_name,lot_no,jumbo_no,step_41,
+        (CASE
+        WHEN step_41 &lt; t2.size_limit_down_std THEN '低于规格下限'
+        WHEN step_41 >t2.size_limit_up_std THEN '高于规格上限'
+        WHEN step_41 >= t2.size_limit_down_std AND step_41 &lt; t2.size_limit_control_down_std THEN '大于规格下限且小于管控下限'
+        WHEN step_41 > t2.size_limit_control_up_std AND step_41 &lt;= t2.size_limit_up_std THEN '大于管控上限且小于规格上限'
+        ELSE '在管控范围之内'
+        END) as 'warning_info'
+        FROM
+        jumbo_step_entity t1
+        INNER JOIN jumbo_std t2 ON t1.sample_name = t2.sample_name
+        AND t1.step_41 NOT BETWEEN t2.size_limit_control_up_std
+        AND t2.size_limit_control_down_std ) t3 WHERE t3.sample_name = #{sampleName} AND t3.warning_info != '在管控范围之内' ORDER BY lot_no
+    </select>
+</mapper>
